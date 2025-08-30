@@ -2,7 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard"; // Will create later
 import Home from "./pages/Home";
-import SignUp from "./pages/Signup";
+import SignUp from "./pages/SignUp";
 
 const App = () => {
   return (
