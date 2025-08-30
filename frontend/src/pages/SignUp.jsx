@@ -13,7 +13,7 @@ const SignUp = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/auth/signup`, form);
+      await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/auth/signup`,form);
       navigate("/login");
     } catch (error) {
       alert(error.response?.data?.message || "Signup failed");
