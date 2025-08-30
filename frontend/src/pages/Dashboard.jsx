@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axiosInstance from "../utils/axiosInstance";
+import { useNavigate } from "react-router-dom";
+import InputModal from "../components/InputModal";
 
 const Dashboard = () => {
   const [folders, setFolders] = useState([{ id: "root", name: "Root", children: [] }]);
@@ -9,6 +11,16 @@ const Dashboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
+  const navigate = useNavigate();
+
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState({
+    title: "",
+    placeholder: "",
+    initialValue: "",
+    onSubmit: null,
+  });
 
   useEffect(() => {
     const savedUser = JSON.parse(localStorage.getItem("user"));
@@ -66,18 +78,25 @@ const Dashboard = () => {
     });
   };
 
-  const handleCreateFolder = async () => {
-    const folderName = prompt("Enter folder name:");
+  // -------------------
+  // Folder / Image Actions
+  // -------------------
+
+  const handleCreateFolder = async (folderName) => {
     if (!folderName) return;
     try {
-      const res = await axiosInstance.post("/folders", { name: folderName, parentId: selectedFolderId });
+      const res = await axiosInstance.post("/folders", {
+        name: folderName,
+        parentId: selectedFolderId,
+      });
       const newFolder = { ...res.data, children: [] };
 
       if (!selectedFolderId || selectedFolderId === "root") {
-        setFolders((prev) => [
-          prev[0],
-          { ...prev[0], children: [...prev[0].children, newFolder] },
-        ]);
+        setFolders((prev) => {
+          const updated = [...prev];
+          updated[0].children = [...updated[0].children, newFolder];
+          return updated;
+        });
       } else {
         setFolders((prev) => addFolderToState(prev, selectedFolderId, newFolder));
       }
@@ -87,12 +106,10 @@ const Dashboard = () => {
     }
   };
 
-  const handleRenameFolder = async (folder) => {
-    const newName = prompt("Enter new folder name:", folder.name);
+  const handleRenameFolder = async (folder, newName) => {
     if (!newName || newName === folder.name) return;
     try {
-       console.log("error in renaming :",folder._id);
-      await axiosInstance.patch(`/folders/${folder._id}/rename`, {newName });
+      await axiosInstance.patch(`/folders/${folder._id}/rename`, { newName });
       const renameRecursive = (list) =>
         list.map((f) => {
           if (f._id === folder._id) return { ...f, name: newName };
@@ -125,15 +142,12 @@ const Dashboard = () => {
     }
   };
 
-
-  const handleImageUpload = async (e) => {
-    const file = e.target.files[0];
-    const name = prompt("Enter image name:");
-    if (!file || !name || !selectedFolderId) return;
+  const handleImageUpload = async (file, name, folderId) => {
+    if (!file || !name || !folderId) return;
     const formData = new FormData();
     formData.append("image", file);
     formData.append("name", name);
-    formData.append("folderId", selectedFolderId);
+    formData.append("folderId", folderId);
     try {
       const res = await axiosInstance.post("/images", formData);
       setImages((prev) => [...prev, res.data]);
@@ -158,6 +172,7 @@ const Dashboard = () => {
     const link = document.createElement("a");
     link.href = url;
     link.download = name;
+    link.target = "_blank";
     link.click();
   };
 
@@ -174,6 +189,40 @@ const Dashboard = () => {
     }
   };
 
+  // -------------------
+  // Modal Open Handlers
+  // -------------------
+
+  const openCreateFolderModal = () => {
+    setModalConfig({
+      title: "Create New Folder",
+      placeholder: "Folder name",
+      initialValue: "",
+      onSubmit: handleCreateFolder,
+    });
+    setModalOpen(true);
+  };
+
+  const openRenameFolderModal = (folder) => {
+    setModalConfig({
+      title: "Rename Folder",
+      placeholder: "New folder name",
+      initialValue: folder.name,
+      onSubmit: (newName) => handleRenameFolder(folder, newName),
+    });
+    setModalOpen(true);
+  };
+
+  const openImageNameModal = (file) => {
+    setModalConfig({
+      title: "Name Your Image",
+      placeholder: "Image name",
+      initialValue: file.name,
+      onSubmit: (name) => handleImageUpload(file, name, selectedFolderId),
+    });
+    setModalOpen(true);
+  };
+
   const renderFolders = (folderList) =>
     folderList.map((folder) => (
       <div key={folder._id || folder.id} className="ml-4 mt-2 flex items-center justify-between">
@@ -186,7 +235,7 @@ const Dashboard = () => {
           {folder.name}
         </div>
         <div className="flex gap-1">
-          <button onClick={() => handleRenameFolder(folder)} className="text-sm text-yellow-700">✏️</button>
+          <button onClick={() => openRenameFolderModal(folder)} className="text-sm text-yellow-700">✏️</button>
           <button onClick={() => handleDeleteFolder(folder)} className="text-sm text-red-700">🗑️</button>
         </div>
         {folder.children?.length > 0 && <div className="ml-4">{renderFolders(folder.children)}</div>}
@@ -194,59 +243,117 @@ const Dashboard = () => {
     ));
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="bg-zinc-600 text-white p-4 flex justify-between">
-        <h1 className="text-lg font-bold">My Drive</h1>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Search images..."
-            className="p-1 rounded text-black bg-amber-50"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          <button onClick={handleSearch} className="bg-blue-500 px-3 py-1 rounded">Search</button>
-          <button onClick={() => { localStorage.removeItem("user"); window.location.reload(); }}
-            className="bg-red-500 px-3 py-1 rounded"
-          >
-            Logout
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-1">
-        <div className="w-1/4 bg-gray-100 p-4 overflow-auto">
-          <h2 className="font-bold mb-2">Folders</h2>
-          <button className="bg-green-500 text-white px-2 py-1 rounded mb-2" onClick={handleCreateFolder}>
-            + New Folder
-          </button>
-          <div>{renderFolders(folders)}</div>
-        </div>
-
-        <div className="flex-1 p-4">
-          <div className="flex justify-between mb-4">
-            <h2 className="text-xl font-bold">{selectedFolder}</h2>
-            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" id="uploadInput" />
-            <label htmlFor="uploadInput" className="bg-blue-500 text-white px-2 py-1 rounded cursor-pointer">+ Upload Image</label>
-          </div>
-
-          {loading ? <p>Loading...</p> : (
-            <div className="grid grid-cols-3 gap-4">
-              {images.map((img) => (
-                <div key={img._id || img.id} className="border rounded p-2 flex flex-col items-center relative">
-                  <img src={img.url || URL.createObjectURL(img.file)} alt={img.name} className="w-24 h-24 object-cover mb-2" />
-                  <p>{img.name}</p>
-                  <div className="flex gap-1 mt-1">
-                    <button onClick={() => handleDownloadImage(img.url, img.name)} className="text-sm text-blue-700">⬇️</button>
-                    <button onClick={() => handleDeleteImage(img._id)} className="text-sm text-red-700">🗑️</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+  <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-200">
+  {/* Top Bar */}
+  <div className="bg-gray-800 text-white p-4 flex flex-col sm:flex-row justify-between shadow-md gap-3 sm:gap-0">
+    <h1 className="text-xl font-bold tracking-wide">Image-Drive</h1>
+    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center">
+      <input
+        type="text"
+        placeholder="Search images..."
+        className="p-2 rounded-lg text-black bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 flex-1"
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+      />
+      <button
+        onClick={handleSearch}
+        className="bg-blue-500 hover:bg-blue-600 px-4 py-1 rounded-lg transition w-full sm:w-auto"
+      >
+        Search
+      </button>
+      <button
+        onClick={() => { localStorage.removeItem("user"); navigate("/"); }}
+        className="bg-red-500 hover:bg-red-600 px-4 py-1 rounded-lg transition w-full sm:w-auto"
+      >
+        Logout
+      </button>
     </div>
+  </div>
+
+  {/* Main Content */}
+  <div className="flex flex-1 overflow-hidden flex-col sm:flex-row">
+    {/* Sidebar */}
+    <div className="w-full sm:w-1/4 bg-white p-4 overflow-auto shadow-lg rounded-r-2xl mb-4 sm:mb-0">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="font-bold text-lg text-gray-700">Folders</h2>
+        <button
+          className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg transition"
+          onClick={openCreateFolderModal}
+        >
+          + New
+        </button>
+      </div>
+      <div className="space-y-1">{renderFolders(folders)}</div>
+    </div>
+
+    {/* Images Section */}
+    <div className="flex-1 p-4 sm:p-6 overflow-auto">
+      <div className="flex flex-col sm:flex-row justify-between mb-6 gap-3 sm:gap-0 items-start sm:items-center">
+        <h2 className="text-2xl font-bold text-gray-800">{selectedFolder}</h2>
+        <div className="flex gap-2 items-center">
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            id="uploadInput"
+            onChange={(e) => openImageNameModal(e.target.files[0])}
+          />
+          <label
+            htmlFor="uploadInput"
+            className="bg-blue-500 text-white px-4 py-2 rounded-lg cursor-pointer hover:bg-blue-600 transition"
+          >
+            + Upload Image
+          </label>
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-gray-500">Loading...</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+          {images.map((img) => (
+            <div
+              key={img._id || img.id}
+              className="bg-white p-3 rounded-2xl shadow-md hover:shadow-lg transition flex flex-col items-center relative"
+            >
+              <img
+                src={img.url || URL.createObjectURL(img.file)}
+                alt={img.name}
+                className="w-full sm:w-28 h-28 object-cover rounded-lg mb-3"
+              />
+              <p className="text-gray-700 font-medium text-center break-words">{img.name}</p>
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={() => handleDownloadImage(img.url, img.name)}
+                  className="text-sm px-2 py-1 rounded bg-blue-100 hover:bg-blue-200"
+                >
+                  ⬇️
+                </button>
+                <button
+                  onClick={() => handleDeleteImage(img._id)}
+                  className="text-sm px-2 py-1 rounded bg-red-100 hover:bg-red-200"
+                >
+                  🗑️
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+
+  {/* Reusable Modal */}
+  <InputModal
+    isOpen={modalOpen}
+    title={modalConfig.title}
+    placeholder={modalConfig.placeholder}
+    initialValue={modalConfig.initialValue}
+    onClose={() => setModalOpen(false)}
+    onSubmit={modalConfig.onSubmit}
+  />
+</div>
+
   );
 };
 
